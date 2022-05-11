@@ -1,0 +1,12 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*$py.class
+
+checkpoint/
+docs/
+model/
+validation/
+vgg_16_2016_08_28/
+.vscode 
+.ipynb
+.git/
