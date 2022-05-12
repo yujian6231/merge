@@ -235,8 +235,7 @@ def plot_regressed_3d_bbox(img, cam_to_img, box_2d, dimensions, alpha, theta_ray
     # the math! returns X, the corners used for constraint
     location, X = calc_location(
         dimensions, cam_to_img, box_2d, alpha, theta_ray)
-    #if ((-6) < location[0] < (6)) and location[2]<80:
-    if location[2] < 80:
+    if ((-8) < location[0] < (8)) and location[2]<80:
         plot_3d_box(img, cam_to_img, orient, dimensions, location)  # 3d boxes
 
         return location
@@ -388,8 +387,8 @@ if __name__ == "__main__":
         if args.model is None:
             raise IOError(('Model not found.'.format(args.model)))
         
-        # args.image = "./docs/images/"
-        # images = sorted(os.listdir(args.image))
+        args.image = "./docs/images/"
+        images = sorted(os.listdir(args.image))
         #Yolo=yolo_2d()
 
         ##initializing for 3d_bbox:
@@ -417,25 +416,18 @@ if __name__ == "__main__":
         return_tensors = utils.read_pb_return_tensors(
             graph, pb_file, return_elements)
 
-        video_path      = "./docs/images/road.mp4"
-        #video_path     = 0
+
         with tf.Session(graph=graph) as sess_2d:
 
-            vid = cv2.VideoCapture(video_path)
-            while True:
-                return_value, frame = vid.read()
-                if return_value:
-                    # = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    image = Image.fromarray(frame)
-                else:
-                    raise ValueError("No image!")
+            for i in images:
+                original_image = cv2.imread(args.image+i)
             #FPS
                 time_start = time.time()
                 
                 num_classes = 80
                 input_size = 416
-                frame_size = frame.shape[:2]
-                image_data = utils.image_preporcess(np.copy(frame), [input_size, input_size])
+                original_image_size = original_image.shape[:2]
+                image_data = utils.image_preporcess(np.copy(original_image), [input_size, input_size])
                 image_data = image_data[np.newaxis, ...]
 
                 #pred_box:
@@ -444,9 +436,9 @@ if __name__ == "__main__":
                                     np.reshape(pred_mbbox, (-1, 5 + num_classes)),
                                     np.reshape(pred_lbbox, (-1, 5 + num_classes))], axis=0)
 
-                bboxes = utils.postprocess_boxes(pred_bbox, frame_size, input_size, 0.3)
+                bboxes = utils.postprocess_boxes(pred_bbox, original_image_size, input_size, 0.3)
                 bboxes = utils.nms(bboxes, 0.45, method='nms')
-                #print(bboxes)
+                print(bboxes)
                  
                 #bbox_2d=Yolo.yolo_2d(original_image,pred_sbbox,pred_mbbox,pred_lbbox)
                 # txt = np.savetxt(i.replace('png', 'txt'), bboxes, fmt='%d')
@@ -457,10 +449,11 @@ if __name__ == "__main__":
                 # box3d_file = args.output + i.replace('png', 'txt')
 
                 calib_path = os.path.abspath(os.path.dirname(
-                        __file__)) + "/" + 'docs/cal/road.txt' 
+                        __file__)) + "/" + 'docs/cal/' + i.replace('png', 'txt')
                 
-                test(args.model, frame, bboxes ,calib_path )
+                test(args.model, original_image, bboxes ,calib_path )
 
                 time_end = time.time()
                 print('time cost totally',time_end-time_start,'s')
-                if cv2.waitKey(1) & 0xFF == ord('q'): break
+                cv2.waitKey(0)
+                
