@@ -242,12 +242,13 @@ def plot_regressed_3d_bbox(img, cam_to_img, box_2d, dimensions, alpha, theta_ray
         return location
 
 
-def test(model, img, bboxes, calib_path):
-
+def bbox_3d(model, img, bboxes, calib_path):
+    time_start_3dbox = time.time()
     img_plot = np.copy(img)
     img = img.astype(np.float32, copy=False)
 
     for box in bboxes:
+        time_start_perbox = time.time()
         # detected bbox:
         obj = {'xmin': (int(float(box[0]))),
                'ymin': (int(float(box[1]))),
@@ -297,93 +298,85 @@ def test(model, img, bboxes, calib_path):
                 img_plot, proj_matrix, obj, list(dims), angle_offset, angle_offset)
             print('Estimated pose: %s' % location)
 
-    print('-------------')
-    #time_end = time.time()
-    #print('time cost per image', time_end-time_start, 's')
+        time_end_perbox = time.time()
+        print('3dbbox per box time cost:', time_end_perbox-time_start_perbox, 's')
+    time_end_3dbox = time.time()
     cv2.imshow('3D detections', img_plot)
+    print('3dbbox time cost totally:', time_end_3dbox - time_start_3dbox, 's')
 
 
 if __name__ == "__main__":
-    #init:
+    # init:
     args = parse_args()
     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
 
-    if args.image is None:
-        raise IOError(('Image not found.'.format(args.image)))
-    if args.box2d is None:
-        raise IOError(('2D bounding box not found.'.format(args.box2d)))
+    if args.model is None:
+        raise IOError(('Model not found.'.format(args.model)))
 
-    if args.mode == 'train':
-        if args.label is None:
-            raise IOError(('Label not found.'.format(args.label)))
+    # initializing for 3d_bbox:
+    # buile graph
+    dimension, orientation, confidence, loss, optimizer, loss_d, loss_o, loss_c = build_model()
+    tfconfig = tf.ConfigProto(allow_soft_placement=True)
+    tfconfig.gpu_options.allow_growth = True
+    sess = tf.Session(config=tfconfig)
 
-        train(args.image, args.box2d, args.label)
-    else:
-        if args.model is None:
-            raise IOError(('Model not found.'.format(args.model)))
+    # Initializing the variablestxt
+    init = tf.global_variables_initializer()
+    sess.run(init)
 
-        # initializing for 3d_bbox:
-        # buile graph
-        dimension, orientation, confidence, loss, optimizer, loss_d, loss_o, loss_c = build_model()
-        tfconfig = tf.ConfigProto(allow_soft_placement=True)
-        tfconfig.gpu_options.allow_growth = True
-        sess = tf.Session(config=tfconfig)
+    # Restore model
+    saver = tf.train.Saver()
+    model = tf.train.latest_checkpoint(args.model)
 
-        # Initializing the variablestxt
-        init = tf.global_variables_initializer()
-        sess.run(init)
+    saver.restore(sess, model)
 
-        # Restore model
-        saver = tf.train.Saver()
-        model = tf.train.latest_checkpoint(args.model)
+    # initializing for 2d_bbox yolo:
+    return_elements = ["input/input_data:0", "pred_sbbox/concat_2:0",
+                       "pred_mbbox/concat_2:0", "pred_lbbox/concat_2:0"]
+    pb_file = "./checkpoint/yolov3_coco.pb"
+    graph = tf.Graph()
+    return_tensors = utils.read_pb_return_tensors(
+        graph, pb_file, return_elements)
 
-        saver.restore(sess, model)
+    video_path = "./docs/images/road.mp4"
+    #video_path     = 0
+    calib_path = os.path.abspath(os.path.dirname(__file__)) + "/" + 'docs/cal/road.txt'
 
-        # initializing for 2d_bbox yolo:
-        return_elements = ["input/input_data:0", "pred_sbbox/concat_2:0",
-                           "pred_mbbox/concat_2:0", "pred_lbbox/concat_2:0"]
-        pb_file = "./checkpoint/yolov3_coco.pb"
-        graph = tf.Graph()
-        return_tensors = utils.read_pb_return_tensors(
-            graph, pb_file, return_elements)
+    with tf.Session(graph=graph) as sess_2d:
 
-        video_path = "./docs/images/road.mp4"
-        #video_path     = 0
-        calib_path = os.path.abspath(os.path.dirname(__file__)) + "/" + 'docs/cal/road.txt'
+        vid = cv2.VideoCapture(video_path)
+        while True:
+            return_value, frame = vid.read()
+            if return_value:
+                # = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                image = Image.fromarray(frame)
+            else:
+                raise ValueError("No image!")
+            # FPS:
+            time_start = time.time()
 
-        with tf.Session(graph=graph) as sess_2d:
+            num_classes = 80
+            input_size = 416
+            frame_size = frame.shape[:2]
+            image_data = utils.image_preporcess(np.copy(frame), [input_size, input_size])
+            image_data = image_data[np.newaxis, ...]
 
-            vid = cv2.VideoCapture(video_path)
-            while True:
-                return_value, frame = vid.read()
-                if return_value:
-                    # = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    image = Image.fromarray(frame)
-                else:
-                    raise ValueError("No image!")
-            # FPS
-                time_start = time.time()
+            # pred_box:
+            pred_sbbox, pred_mbbox, pred_lbbox = sess_2d.run(
+                [return_tensors[1], return_tensors[2], return_tensors[3]], feed_dict={return_tensors[0]: image_data})
+            pred_bbox = np.concatenate([np.reshape(pred_sbbox, (-1, 5 + num_classes)),
+                                        np.reshape(pred_mbbox, (-1, 5 + num_classes)),
+                                        np.reshape(pred_lbbox, (-1, 5 + num_classes))], axis=0)
 
-                num_classes = 80
-                input_size = 416
-                frame_size = frame.shape[:2]
-                image_data = utils.image_preporcess(np.copy(frame), [input_size, input_size])
-                image_data = image_data[np.newaxis, ...]
+            bboxes = utils.postprocess_boxes(pred_bbox, frame_size, input_size, 0.3)
+            bboxes = utils.nms(bboxes, 0.45, method='nms')
+            time_end_2d = time.time()
+            print('2d bbox time cost:', time_end_2d-time_start, 's')
 
-                # pred_box:
-                pred_sbbox, pred_mbbox, pred_lbbox = sess_2d.run(
-                    [return_tensors[1], return_tensors[2], return_tensors[3]], feed_dict={return_tensors[0]: image_data})
-                pred_bbox = np.concatenate([np.reshape(pred_sbbox, (-1, 5 + num_classes)),
-                                            np.reshape(pred_mbbox, (-1, 5 + num_classes)),
-                                            np.reshape(pred_lbbox, (-1, 5 + num_classes))], axis=0)
+            bbox_3d(args.model, frame, bboxes, calib_path)
 
-                bboxes = utils.postprocess_boxes(pred_bbox, frame_size, input_size, 0.3)
-                bboxes = utils.nms(bboxes, 0.45, method='nms')
-
-                test(args.model, frame, bboxes, calib_path)
-
-                time_end = time.time()
-                print('time cost totally', time_end-time_start, 's')
-                
-                if cv2.waitKey(1) & 0xFF == ord('q'):
-                    break
+            time_end = time.time()
+            print('time cost totally', time_end-time_start, 's')
+            print('-------------')
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
