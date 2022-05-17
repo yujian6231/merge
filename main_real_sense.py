@@ -21,6 +21,10 @@ from core.utils import *
 # time count
 import time
 
+#real sense
+import pyrealsense2 as rs
+
+
 #####
 # Training setting
 
@@ -301,7 +305,9 @@ def bbox_3d(model, img, bboxes, calib_path):
         time_end_perbox = time.time()
         print('3dbbox per box time cost:', time_end_perbox-time_start_perbox, 's')
     time_end_3dbox = time.time()
-    cv2.imshow('3D detections', img_plot)
+    image = Image.fromarray(img_plot)
+    result = cv2.cvtColor(img_plot, cv2.COLOR_RGB2BGR)
+    cv2.imshow('3D detections', result)
     print('3dbbox time cost totally:', time_end_3dbox - time_start_3dbox, 's')
 
 
@@ -340,18 +346,23 @@ if __name__ == "__main__":
 
     video_path = "./docs/images/kitti_2011_09_26_drive_0013_synced_kitti_camera_color_left_image_raw_10hz.mp4"
     #video_path     = 0
+
+    pipeline = rs.pipeline()
+    config = rs.config()
+    config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
     calib_path = os.path.abspath(os.path.dirname(__file__)) + "/" + 'docs/cal/road.txt'
 
     with tf.Session(graph=graph) as sess_2d:
 
-        vid = cv2.VideoCapture(video_path)
+        pipeline.start(config)
         while True:
-            return_value, frame = vid.read()
-            if return_value:
-                # = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                image = Image.fromarray(frame)
-            else:
-                raise ValueError("No image!")
+            frames = pipeline.wait_for_frames()
+            color_frame = frames.get_color_frame()
+            color_frame = np.asanyarray(color_frame.get_data())
+         
+            frame = cv2.cvtColor(color_frame,cv2.COLOR_RGB2BGR)
+            #frame = np.hstack((color_frame,frame))
+ 
             # FPS:
             time_start = time.time()
 

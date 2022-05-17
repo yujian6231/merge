@@ -29,7 +29,7 @@ W = 1.
 ALPHA = 1.
 MAX_JIT = 3
 NORM_H, NORM_W = 224, 224
-VEHICLES = ['Car', 'Truck', 'Van', 'Tram', 'Pedestrian', 'Cyclist']
+VEHICLES = [ 'Car', 'Truck', 'Van', 'Tram', 'Pedestrian']
 BATCH_SIZE = 8
 learning_rate = 0.0001
 epochs = 50
@@ -235,30 +235,61 @@ def plot_regressed_3d_bbox(img, cam_to_img, box_2d, dimensions, alpha, theta_ray
     # the math! returns X, the corners used for constraint
     location, X = calc_location(
         dimensions, cam_to_img, box_2d, alpha, theta_ray)
-    # if ((-6) < location[0] < (6)) and location[2]<80:
-    if location[2] < 80:
+    if ((-8) < location[0] < (8)) and location[2]<80:
         plot_3d_box(img, cam_to_img, orient, dimensions, location)  # 3d boxes
 
         return location
 
 
-def bbox_3d(model, img, bboxes, calib_path):
-    time_start_3dbox = time.time()
+def test(model, img, bboxes,calib_path):
+
+    # # buile graph
+    # dimension, orientation, confidence, loss, optimizer, loss_d, loss_o, loss_c = build_model()
+
+    # GPU config
+    # tfconfig = tf.ConfigProto(allow_soft_placement=True)
+    # tfconfig.gpu_options.allow_growth = True
+    # sess = tf.Session(config=tfconfig)
+
+    # # Initializing the variablestxt
+    # init = tf.global_variables_initializer()
+    # sess.run(init)
+
+    # # Restore model
+    # saver = tf.train.Saver()
+    # model = tf.train.latest_checkpoint(model)
+
+    # saver.restore(sess, model)
+
+    # create a folder for saving result
+  
+
+    # Load image & run testing
+    
+
+    #time_start = time.time()
+    #image_file = image_path + f
+    #box2d_file = box2d_loc + f.replace('png', 'txt')
+    # box2d_file = img.replace('png', 'txt')
+    
+    #print(image_file)
+    #with open(box3d_file, 'w') as box3d:
+        
     img_plot = np.copy(img)
     img = img.astype(np.float32, copy=False)
 
     for box in bboxes:
-        time_start_perbox = time.time()
-        # detected bbox:
+        # print("!!!!line::",line)
+        #line = line.strip().split(' ')
+
         obj = {'xmin': (int(float(box[0]))),
-               'ymin': (int(float(box[1]))),
-               'xmax': (int(float(box[2]))),
-               'ymax': (int(float(box[3]))),
-               }
-        # detected class:
+                'ymin': (int(float(box[1]))),
+                'xmax': (int(float(box[2]))),
+                'ymax': (int(float(box[3]))),
+            }
+
         class_load = read_class_names(cfg.YOLO.CLASSES)
         class_num = int(float(box[5]))
-
         patch = img[obj['ymin']:obj['ymax'], obj['xmin']:obj['xmax']]
         patch = cv2.resize(patch, (NORM_H, NORM_W))
         patch = patch - np.array([[[103.939, 116.779, 123.68]]])
@@ -282,9 +313,33 @@ def bbox_3d(model, img, bboxes, calib_path):
         if angle_offset > np.pi:
             angle_offset = angle_offset - (2.*np.pi)
 
-        # specific to interested objects:
+        # redefine kitti_label_txt:
+        #line = []
         if class_load[class_num] in VEHICLES:
-            print("class:", class_load[class_num])
+            print("class:",class_load[class_num])
+            # line.append(class_load[class_num])
+            # line.append('0.00')
+            # line.append('0')
+            # line.append('0')
+            # line.append(obj['xmin'])
+            # line.append(obj['ymin'])
+            # line.append(obj['xmax'])
+
+            # line.append(obj['ymax'])
+            # line.append('0')
+
+            # line.append('0')
+            # line.append('0')
+            # line.append('0')
+            # line.append('0')
+            # line.append('0')
+            # line.append('0')
+
+            # line[3] = str(angle_offset)
+
+            #fixme: theta_ray!=angle
+            #line[-1] = angle_offset
+            # print(line)
 
             # Transform regressed dimension
             if class_load[class_num] in VEHICLES:
@@ -292,91 +347,113 @@ def bbox_3d(model, img, bboxes, calib_path):
             else:
                 dims = dims_avg['Car'] + prediction[0][0]
 
+            #line = line[:8] + list(dims) + line[11:]
+
+            
             proj_matrix = get_calibration_cam_to_image(calib_path)
 
             location = plot_regressed_3d_bbox(
                 img_plot, proj_matrix, obj, list(dims), angle_offset, angle_offset)
             print('Estimated pose: %s' % location)
 
-        time_end_perbox = time.time()
-        print('3dbbox per box time cost:', time_end_perbox-time_start_perbox, 's')
-    time_end_3dbox = time.time()
+            # Write regressed 3D dim and oritent to file
+            #line = ' '.join([str(item) for item in line]) + '\n'
+            #print(line)
+            #time_end=time.time()
+            #box3d.write(line)
+    print('-------------')
+    #time_end = time.time()
+    #print('time cost per image', time_end-time_start, 's')
     cv2.imshow('3D detections', img_plot)
-    print('3dbbox time cost totally:', time_end_3dbox - time_start_3dbox, 's')
+    
 
 
 if __name__ == "__main__":
-    # init:
     args = parse_args()
+
     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
 
-    if args.model is None:
-        raise IOError(('Model not found.'.format(args.model)))
+    if args.image is None:
+        raise IOError(('Image not found.'.format(args.image)))
+    if args.box2d is None:
+        raise IOError(('2D bounding box not found.'.format(args.box2d)))
 
-    # initializing for 3d_bbox:
-    # buile graph
-    dimension, orientation, confidence, loss, optimizer, loss_d, loss_o, loss_c = build_model()
-    tfconfig = tf.ConfigProto(allow_soft_placement=True)
-    tfconfig.gpu_options.allow_growth = True
-    sess = tf.Session(config=tfconfig)
+    if args.mode == 'train':
+        if args.label is None:
+            raise IOError(('Label not found.'.format(args.label)))
 
-    # Initializing the variablestxt
-    init = tf.global_variables_initializer()
-    sess.run(init)
+        train(args.image, args.box2d, args.label)
+    else:
+        if args.model is None:
+            raise IOError(('Model not found.'.format(args.model)))
+        
+       
+        #Yolo=yolo_2d()
 
-    # Restore model
-    saver = tf.train.Saver()
-    model = tf.train.latest_checkpoint(args.model)
+        ##initializing for 3d_bbox:
+        # buile graph
+        dimension, orientation, confidence, loss, optimizer, loss_d, loss_o, loss_c = build_model()
+        tfconfig = tf.ConfigProto(allow_soft_placement=True)
+        tfconfig.gpu_options.allow_growth = True
+        sess = tf.Session(config=tfconfig)
 
-    saver.restore(sess, model)
+        # Initializing the variablestxt
+        init = tf.global_variables_initializer()
+        sess.run(init)
 
-    # initializing for 2d_bbox yolo:
-    return_elements = ["input/input_data:0", "pred_sbbox/concat_2:0",
-                       "pred_mbbox/concat_2:0", "pred_lbbox/concat_2:0"]
-    pb_file = "./checkpoint/yolov3_coco.pb"
-    graph = tf.Graph()
-    return_tensors = utils.read_pb_return_tensors(
-        graph, pb_file, return_elements)
+        # Restore model
+        saver = tf.train.Saver()
+        model = tf.train.latest_checkpoint(args.model)
 
-    video_path = "./docs/images/kitti_2011_09_26_drive_0013_synced_kitti_camera_color_left_image_raw_10hz.mp4"
-    #video_path     = 0
-    calib_path = os.path.abspath(os.path.dirname(__file__)) + "/" + 'docs/cal/road.txt'
+        saver.restore(sess, model)
 
-    with tf.Session(graph=graph) as sess_2d:
+        ##initializing for 2d_bbox yolo:
+        return_elements = ["input/input_data:0", "pred_sbbox/concat_2:0",
+                                "pred_mbbox/concat_2:0", "pred_lbbox/concat_2:0"]
+        pb_file = "./checkpoint/yolov3_coco.pb"
+        graph = tf.Graph()
+        return_tensors = utils.read_pb_return_tensors(
+            graph, pb_file, return_elements)
 
-        vid = cv2.VideoCapture(video_path)
-        while True:
-            return_value, frame = vid.read()
-            if return_value:
-                # = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                image = Image.fromarray(frame)
-            else:
-                raise ValueError("No image!")
-            # FPS:
-            time_start = time.time()
+        args.image = "./docs/data1/"
+        images = sorted(os.listdir(args.image))
+        calib_path = os.path.abspath(os.path.dirname(__file__)) + "/" + 'docs/cal/road.txt'
+        with tf.Session(graph=graph) as sess_2d:
 
-            num_classes = 80
-            input_size = 416
-            frame_size = frame.shape[:2]
-            image_data = utils.image_preporcess(np.copy(frame), [input_size, input_size])
-            image_data = image_data[np.newaxis, ...]
+            for i in images:
+                original_image = cv2.imread(args.image+i)
+            #FPS
+                time_start = time.time()
+                
+                num_classes = 80
+                input_size = 416
+                original_image_size = original_image.shape[:2]
+                image_data = utils.image_preporcess(np.copy(original_image), [input_size, input_size])
+                image_data = image_data[np.newaxis, ...]
 
-            # pred_box:
-            pred_sbbox, pred_mbbox, pred_lbbox = sess_2d.run(
-                [return_tensors[1], return_tensors[2], return_tensors[3]], feed_dict={return_tensors[0]: image_data})
-            pred_bbox = np.concatenate([np.reshape(pred_sbbox, (-1, 5 + num_classes)),
-                                        np.reshape(pred_mbbox, (-1, 5 + num_classes)),
-                                        np.reshape(pred_lbbox, (-1, 5 + num_classes))], axis=0)
+                #pred_box:
+                pred_sbbox, pred_mbbox, pred_lbbox = sess_2d.run([return_tensors[1], return_tensors[2], return_tensors[3]],feed_dict={return_tensors[0]: image_data})
+                pred_bbox = np.concatenate([np.reshape(pred_sbbox, (-1, 5 + num_classes)),
+                                    np.reshape(pred_mbbox, (-1, 5 + num_classes)),
+                                    np.reshape(pred_lbbox, (-1, 5 + num_classes))], axis=0)
 
-            bboxes = utils.postprocess_boxes(pred_bbox, frame_size, input_size, 0.3)
-            bboxes = utils.nms(bboxes, 0.45, method='nms')
-            time_end_2d = time.time()
-            print('2d bbox time cost:', time_end_2d-time_start, 's')
+                bboxes = utils.postprocess_boxes(pred_bbox, original_image_size, input_size, 0.3)
+                bboxes = utils.nms(bboxes, 0.45, method='nms')
+                #print(bboxes)
+                 
+                #bbox_2d=Yolo.yolo_2d(original_image,pred_sbbox,pred_mbbox,pred_lbbox)
+                # txt = np.savetxt(i.replace('png', 'txt'), bboxes, fmt='%d')
+                # box2d_file = "./" + i.replace('png', 'txt')
 
-            bbox_3d(args.model, frame, bboxes, calib_path)
+                # if os.path.isdir(args.output) == False:
+                #     os.mkdir(args.output)
+                # box3d_file = args.output + i.replace('png', 'txt')
 
-            time_end = time.time()
-            print('time cost totally', time_end-time_start, 's')
-            print('-------------')
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
+                # calib_path = os.path.abspath(os.path.dirname(
+                #         __file__)) + "/" + 'docs/cal/' + i.replace('png', 'txt')
+                
+                test(args.model, original_image, bboxes ,calib_path )
+
+                time_end = time.time()
+                print('time cost totally',time_end-time_start,'s')
+                cv2.waitKey(1)
